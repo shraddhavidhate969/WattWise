@@ -1,0 +1,298 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WattWise - Electricity Tracker</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f2f5f9;
+            margin: 0;
+            padding: 30px;
+            color: #1b2e50;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+
+        h1 {
+            color: #147a59;
+        }
+
+        .cards {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .card, .panel {
+            background: white;
+            padding: 22px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px #00000010;
+        }
+
+        .card {
+            flex: 1;
+            min-width: 180px;
+        }
+
+        .value {
+            font-size: 26px;
+            font-weight: bold;
+        }
+
+        label {
+            display: block;
+            margin: 12px 0 6px;
+        }
+
+        input {
+            width: 97%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+
+        button {
+            background: #147a59;
+            color: white;
+            padding: 12px 18px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        .alert {
+            background: #e0f3e9;
+            padding: 14px;
+            border-radius: 8px;
+        }
+
+        .warning {
+            background: #fff0d6;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .success {
+            background: #e0f3e9;
+        }
+
+        .error {
+            background: #fff0d6;
+        }
+
+        .chart-container {
+            height: 320px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 13px 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            color: #64748b;
+        }
+
+        .hint {
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 15px;
+            }
+
+            .cards {
+                flex-direction: column;
+            }
+
+            input {
+                width: 92%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <h1>⚡ WattWise</h1>
+    <p>Cloud-Based Electricity Usage Tracker</p>
+
+    <div class="cards">
+        <div class="card">
+            <p>Monthly Usage</p>
+            <div class="value">{{ monthly_usage }} kWh</div>
+        </div>
+
+        <div class="card">
+            <p>Estimated Bill</p>
+            <div class="value">₹{{ estimated_bill }}</div>
+        </div>
+
+        <div class="card">
+            <p>Rate Per Unit</p>
+            <div class="value">₹{{ rate }}</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Add Meter Reading</h2>
+
+        {% if message %}
+        <p class="message {{ message_type }}">{{ message }}</p>
+        {% endif %}
+
+        <form method="POST" action="/">
+            <label for="reading_date">Date</label>
+            <input
+                type="date"
+                id="reading_date"
+                name="reading_date"
+                value="{{ today }}"
+                required
+            >
+
+            <label for="meter_reading">Meter Reading (kWh)</label>
+            <input
+                type="number"
+                id="meter_reading"
+                name="meter_reading"
+                min="0"
+                step="any"
+                placeholder="Enter meter reading"
+                required
+            >
+
+            <button type="submit">Save Reading</button>
+        </form>
+
+        <p class="hint">
+            Enter the cumulative reading shown on your electricity meter.
+        </p>
+    </div>
+
+    <div class="panel">
+        <h2>Usage Alert</h2>
+
+        <div class="alert {% if alert_type == 'warning' %}warning{% endif %}">
+            <strong>{{ alert }}</strong>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Daily Electricity Consumption</h2>
+
+        {% if records|length > 1 %}
+        <div class="chart-container">
+            <canvas id="usageChart"></canvas>
+        </div>
+        {% else %}
+        <p class="hint">
+            Add at least two readings on different dates to view the graph.
+        </p>
+        {% endif %}
+    </div>
+
+    <div class="panel">
+        <h2>Reading History</h2>
+
+        {% if records %}
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Meter Reading</th>
+                        <th>Daily Usage</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for r in records %}
+                    <tr>
+                        <td>{{ r.date }}</td>
+                        <td>{{ "%.2f"|format(r.reading) }} kWh</td>
+                        <td>{{ "%.2f"|format(r.usage) }} kWh</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="hint">No readings recorded yet.</p>
+        {% endif %}
+    </div>
+
+    <p class="hint">
+        This is an educational project. The estimated bill uses a flat
+        electricity rate and excludes taxes, fixed charges, and tariff slabs.
+    </p>
+
+</div>
+
+{% if records|length > 1 %}
+<script>
+    const chartDates = {{ records | map(attribute='date') | list | tojson }};
+    const chartUsage = {{ records | map(attribute='usage') | list | tojson }};
+
+    new Chart(document.getElementById('usageChart'), {
+        type: 'line',
+        data: {
+            labels: chartDates,
+            datasets: [{
+                label: 'Daily Usage (kWh)',
+                data: chartUsage,
+                borderColor: '#16835f',
+                backgroundColor: 'rgba(22, 131, 95, 0.15)',
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Electricity Usage (kWh)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Date'
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endif %}
+
+</body>
+</html>
